@@ -27,13 +27,14 @@ pub mod http {
 }
 pub mod blocks {
     pub mod block;
+    pub mod browser;
     pub mod code;
+    pub mod curl;
     pub mod data;
+    pub mod email;
     pub mod input;
     pub mod llm;
     pub mod map;
     pub mod reduce;
     pub mod search;
-    pub mod curl;
-    pub mod browser;
 }
