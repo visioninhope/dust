@@ -2,7 +2,7 @@ import { Worker } from "@temporalio/worker";
 
 import { getTemporalWorkerConnection } from "@connectors/lib/temporal";
 
-import * as activities from "./slack.js";
+import * as activities from "./activities";
 
 export async function runSlackWorker(): Promise<void> {
   const { connection, namespace } = await getTemporalWorkerConnection();
