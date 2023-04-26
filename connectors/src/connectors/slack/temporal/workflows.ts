@@ -1,10 +1,9 @@
-import { continueAsNew } from "@temporalio/workflow";
 import { executeChild, proxyActivities } from "@temporalio/workflow";
-import { off } from "process";
 
 import { DataSourceConfig } from "../../../types/data_source_config";
 import { getWeekEnd, getWeekStart } from "../lib/utils";
 import type * as activities from "./activities";
+import { saveSuccessSyncActivity } from "./activities";
 
 const {
   getChannels,
@@ -29,6 +28,7 @@ export async function workspaceFullSync(
       args: [nangoConnectionId, dataSourceConfig, channel.id, channel.name],
     });
   }
+  saveSuccessSyncActivity(dataSourceConfig);
 }
 
 export async function workspaceSyncOneChannel(
@@ -86,18 +86,6 @@ export async function workspaceSyncOneChannel(
     console.log("sync non threaded", new Date());
 
     messagesCursor = messages.response_metadata?.next_cursor;
-    // counter++;
-    // if (counter) {
-    //   continueAsNew<typeof workspaceSyncOneChannel>(
-    //     nangoConnectionId,
-    //     dataSourceConfig,
-    //     channelId,
-    //     messagesCursor
-    //   );
-    //   //Useless return because continue as new exist the workflow, but
-    //   // this is here to make sure people reading this code udnerstand
-    //   // that we are exiting the funnction.
-    // }
   } while (messagesCursor);
   await syncMultipleNoNThreaded(
     slackAccessToken,

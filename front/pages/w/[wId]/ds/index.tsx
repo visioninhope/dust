@@ -45,7 +45,7 @@ const MANAGED_DATA_SOURCES: ManagedDataSource[] = [
   {
     name: "Slack",
     connectorProvider: "slack",
-    isBuilt: false,
+    isBuilt: true,
   },
   {
     name: "Google Drive",

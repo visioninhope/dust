@@ -15,7 +15,7 @@ import { DataSourceConfig } from "@connectors/types/data_source_config";
 
 import { cacheGet, cacheSet } from "../../../lib/cache";
 
-const { DUST_API_ENDPOINT, NANGO_SLACK_CONNECTOR_ID } = process.env;
+const { FRONT_API, NANGO_SLACK_CONNECTOR_ID } = process.env;
 
 const MAX_CONCURRENCY_LEVEL = 10;
 
@@ -132,9 +132,11 @@ export async function syncNonThreaded(
     );
   }
   for (const message of c.messages) {
-    messages.push(message);
+    if (!message.thread_ts) {
+      messages.push(message);
+    }
   }
-  const text = await formatNonThreaded(channelId, messages);
+  const text = await formatMessagesForUpsert(channelId, messages);
 
   const startDate = new Date(startTsMs);
   const endDate = new Date(endTsMs);
@@ -198,22 +200,10 @@ export async function syncThread(
     next_cursor = replies.response_metadata?.next_cursor;
   } while (next_cursor);
 
-  const text = await formatThread(channelId, allMessages);
+  const text = await formatMessagesForUpsert(channelId, allMessages);
   const documentId = `${channel.name}-threaded-${threadTs}`;
 
   await upsertToDatasource(dataSourceConfig, documentId, text);
-}
-
-async function formatThread(channelId: string, messages: Message[]) {
-  const promises = messages.map(async (message) => {
-    const userName = await getUserName(message.user as string);
-    let text = await processMessageForMentions(message.text as string);
-    text = processMessageRemoveEmoji(text);
-
-    return `${userName} said:\n ${text}`;
-  });
-
-  return (await Promise.all(promises)).join("\n");
 }
 
 async function processMessageForMentions(message: string): Promise<string> {
@@ -240,7 +230,7 @@ function processMessageRemoveEmoji(message: string): string {
   return message.replace(/:[a-z_-]+:/g, "");
 }
 
-async function formatNonThreaded(channelId: string, messages: Message[]) {
+async function formatMessagesForUpsert(channelId: string, messages: Message[]) {
   return (
     await Promise.all(
       messages.map(async (message) => {
@@ -248,7 +238,10 @@ async function formatNonThreaded(channelId: string, messages: Message[]) {
         text = processMessageRemoveEmoji(text);
 
         const userName = await getUserName(message.user as string);
-        return `${userName} said:\n ${text}`;
+        const messageDate = new Date(parseInt(message.ts as string, 10) * 1000);
+        const messageDateStr = formatDateForUpsert(messageDate);
+
+        return `>> @${userName} [${messageDateStr}]:\n ${text}\n`;
       })
     )
   ).join("\n");
@@ -259,7 +252,8 @@ async function upsertToDatasource(
   documentId: string,
   documentContent: string
 ) {
-  const dust_url = `${DUST_API_ENDPOINT}/api/v1/w/${dataSourceConfig.workspaceId}/data_sources/${dataSourceConfig.dataSourceName}/documents/${documentId}`;
+  console.log(`Upserting to Dust data source ${documentId}`, documentContent);
+  const dust_url = `${FRONT_API}/api/v1/w/${dataSourceConfig.workspaceId}/data_sources/${dataSourceConfig.dataSourceName}/documents/${documentId}`;
   const dust_request_payload = {
     text: documentContent,
   };
@@ -336,4 +330,14 @@ async function getUserName(slackUserId: string) {
 
 function getUserCacheKey(userId: string) {
   return `slack-userid2name-${userId}`;
+}
+
+export function formatDateForUpsert(date: Date) {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+
+  return `${year}${month}${day} ${hours}:${minutes}`;
 }

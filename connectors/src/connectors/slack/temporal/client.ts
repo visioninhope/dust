@@ -5,7 +5,7 @@ import {
   DataSourceInfo,
 } from "@connectors/types/data_source_config";
 
-import { workspaceFullSync } from "./workflow";
+import { workspaceFullSync } from "./workflows";
 
 export async function launchSlackSyncWorkflow(
   dataSourceConfig: DataSourceConfig,
