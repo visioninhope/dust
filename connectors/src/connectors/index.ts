@@ -3,7 +3,7 @@ import {
   resumeNotionConnector,
   stopNotionConnector,
 } from "@connectors/connectors/notion";
-import { createSlackConnector } from "@connectors/connectors/slack/slack";
+import { createSlackConnector } from "@connectors/connectors/slack";
 import { Result } from "@connectors/lib/result";
 import { ConnectorProvider } from "@connectors/types/connector";
 import {

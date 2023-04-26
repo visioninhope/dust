@@ -18,8 +18,8 @@ const {
 });
 
 export async function workspaceFullSync(
-  nangoConnectionId: string,
-  dataSourceConfig: DataSourceConfig
+  dataSourceConfig: DataSourceConfig,
+  nangoConnectionId: string
 ): Promise<void> {
   const slackAccessToken = await getAccessToken(nangoConnectionId);
   await fetchUsers(slackAccessToken);

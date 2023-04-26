@@ -4,11 +4,12 @@ import {
   Connector,
   sequelize_conn,
   SlackConfiguration,
-} from "../../../lib/models.js";
-import { nango_client } from "../../../lib/nango_client.js";
-import { Err, Ok, type Result } from "../../../lib/result.js";
-import type { DataSourceConfig } from "../../../types/data_source_config.js";
+} from "@connectors/lib/models.js";
+import { nango_client } from "@connectors/lib/nango_client.js";
+import { Err, Ok, type Result } from "@connectors/lib/result.js";
+import type { DataSourceConfig } from "@connectors/types/data_source_config.js";
 export type NangoConnectionId = string;
+import { launchSlackSyncWorkflow } from "@connectors/connectors/slack/temporal/client.js";
 
 const { NANGO_SLACK_CONNECTOR_ID } = process.env;
 
@@ -66,6 +67,8 @@ export async function createSlackConnector(
         },
         { transaction: t }
       );
+
+      launchSlackSyncWorkflow(dataSourceConfig, nangoConnectionId);
 
       return new Ok(connector);
     }

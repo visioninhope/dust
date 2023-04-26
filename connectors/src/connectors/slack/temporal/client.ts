@@ -1,27 +1,31 @@
-import { WorkflowClient } from "@temporalio/client";
+import { getTemporalClient } from "@connectors/lib/temporal";
+import logger from "@connectors/logger/logger";
+import {
+  DataSourceConfig,
+  DataSourceInfo,
+} from "@connectors/types/data_source_config";
 
-import { workspaceFullSync } from "./workflow.js";
+import { workspaceFullSync } from "./workflow";
 
-/**
- * Temporal client only here for demo purposes.
- */
-export async function slackGetChannelsViaTemporal(
+export async function launchSlackSyncWorkflow(
+  dataSourceConfig: DataSourceConfig,
   nangoConnectionId: string
-): Promise<void> {
-  const client = new WorkflowClient();
-  await client.start(workspaceFullSync, {
-    workflowId: `getSlackChannelsWorkflow ${new Date().getTime()}`,
-    taskQueue: "slack-sync",
+) {
+  const client = await getTemporalClient();
 
-    args: [
-      nangoConnectionId,
-      {
-        workspaceAPIKey: "sk-7b541329c7a12df7c8a05d08435efd7d",
-        dataSourceName: "managed-slack",
-        workspaceId: "8f98bcd506",
-      },
-    ],
+  const workflowId = getWorkflowId(dataSourceConfig);
+  await client.workflow.start(workspaceFullSync, {
+    args: [dataSourceConfig, nangoConnectionId],
+    taskQueue: "slack-queue",
+    workflowId: workflowId,
   });
-  return;
+
+  logger.info(
+    { workspaceId: dataSourceConfig.workspaceId },
+    `Started Slac sync workflow with id ${workflowId}`
+  );
 }
-slackGetChannelsViaTemporal("slack-managed-ds-1");
+
+function getWorkflowId(dataSourceConfig: DataSourceInfo) {
+  return `workflow-slack-${dataSourceConfig.workspaceId}-${dataSourceConfig.dataSourceName}`;
+}

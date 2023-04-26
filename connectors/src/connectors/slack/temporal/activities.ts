@@ -1,5 +1,3 @@
-import { nango_client } from "@connectors/lib/nango_client";
-import { DataSourceConfig } from "@connectors/types/data_source_config";
 import { WebClient } from "@slack/web-api";
 import { Message } from "@slack/web-api/dist/response/ConversationsHistoryResponse";
 import { ConversationsHistoryResponse } from "@slack/web-api/dist/response/ConversationsHistoryResponse";
@@ -9,6 +7,11 @@ import {
 } from "@slack/web-api/dist/response/ConversationsListResponse";
 import { ConversationsRepliesResponse } from "@slack/web-api/dist/response/ConversationsRepliesResponse";
 import axios, { AxiosRequestConfig } from "axios";
+
+import { syncSucceeded } from "@connectors/connectors/sync_status";
+import { Connector } from "@connectors/lib/models";
+import { nango_client } from "@connectors/lib/nango_client";
+import { DataSourceConfig } from "@connectors/types/data_source_config";
 
 import { cacheGet, cacheSet } from "../../../lib/cache";
 
@@ -307,6 +310,24 @@ export async function getAccessToken(
     throw new Error("NANGO_SLACK_CONNECTOR_ID is not defined");
   }
   return nango_client().getToken(NANGO_SLACK_CONNECTOR_ID, nangoConnectionId);
+}
+
+export async function saveSuccessSyncActivity(
+  dataSourceConfig: DataSourceConfig
+) {
+  const connector = await Connector.findOne({
+    where: {
+      type: "slack",
+      workspaceId: dataSourceConfig.workspaceId,
+      dataSourceName: dataSourceConfig.dataSourceName,
+    },
+  });
+  if (!connector) {
+    throw new Error(
+      `Could not find the connectors to mark it as success :/ ${dataSourceConfig.workspaceId} ${dataSourceConfig.dataSourceName}`
+    );
+  }
+  syncSucceeded(connector.id);
 }
 
 async function getUserName(slackUserId: string) {
