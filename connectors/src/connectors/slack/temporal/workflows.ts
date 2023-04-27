@@ -16,22 +16,42 @@ const {
   startToCloseTimeout: "1 minute",
 });
 
+/**
+ * - Concurrency model:
+ * One child workflow per Slack channel is triggered
+ * For one channel:
+ *  We fetch messages by batch of 100.
+ *   We trigger 2 sync activities per batch of 100:
+ *    One for all threaded messages
+ *     Inside, we have one promise per thread
+ *    One for all non threaded messages
+ *     Inside, we have one promise per week
+ *    Promises are sent and awaited by batch of activities.MAX_CONCURRENCY_LEVEL
+ */
 export async function workspaceFullSync(
+  connectorId: string,
   dataSourceConfig: DataSourceConfig,
   nangoConnectionId: string
 ): Promise<void> {
   const slackAccessToken = await getAccessToken(nangoConnectionId);
-  await fetchUsers(slackAccessToken);
+  await fetchUsers(slackAccessToken, connectorId);
   const channels = await getChannels(slackAccessToken);
   for (const channel of channels) {
     await executeChild(workspaceSyncOneChannel.name, {
-      args: [nangoConnectionId, dataSourceConfig, channel.id, channel.name],
+      args: [
+        connectorId,
+        nangoConnectionId,
+        dataSourceConfig,
+        channel.id,
+        channel.name,
+      ],
     });
   }
   saveSuccessSyncActivity(dataSourceConfig);
 }
 
 export async function workspaceSyncOneChannel(
+  connectorId: string,
   nangoConnectionId: string,
   dataSourceConfig: DataSourceConfig,
   channelId: string,
@@ -45,11 +65,11 @@ export async function workspaceSyncOneChannel(
   >();
 
   const slackAccessToken = await getAccessToken(nangoConnectionId);
-  // const counter = 0;
+
   do {
     const messages = await getMessagesForChannel(
       slackAccessToken,
-      channelId as string,
+      channelId,
       100,
       messagesCursor
     );
@@ -75,15 +95,14 @@ export async function workspaceSyncOneChannel(
         });
       }
     }
-    console.log("sync threaded", new Date());
     await syncThreads(
       dataSourceConfig,
       slackAccessToken,
       channelId,
-      threadsToSync
+      threadsToSync,
+      connectorId
     );
     threadsToSync.length = 0;
-    console.log("sync non threaded", new Date());
 
     messagesCursor = messages.response_metadata?.next_cursor;
   } while (messagesCursor);
@@ -92,6 +111,7 @@ export async function workspaceSyncOneChannel(
     dataSourceConfig,
     channelId,
     channelName,
-    Array.from(unthreadedTimeframesToSync.values())
+    Array.from(unthreadedTimeframesToSync.values()),
+    connectorId
   );
 }
