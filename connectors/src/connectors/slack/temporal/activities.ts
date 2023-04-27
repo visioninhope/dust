@@ -226,16 +226,11 @@ async function processMessageForMentions(message: string): Promise<string> {
   return message;
 }
 
-function processMessageRemoveEmoji(message: string): string {
-  return message.replace(/:[a-z_-]+:/g, "");
-}
-
 async function formatMessagesForUpsert(channelId: string, messages: Message[]) {
   return (
     await Promise.all(
       messages.map(async (message) => {
-        let text = await processMessageForMentions(message.text as string);
-        text = processMessageRemoveEmoji(text);
+        const text = await processMessageForMentions(message.text as string);
 
         const userName = await getUserName(message.user as string);
         const messageDate = new Date(parseInt(message.ts as string, 10) * 1000);
