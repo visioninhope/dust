@@ -11,6 +11,7 @@ import axios, { AxiosRequestConfig } from "axios";
 import { syncSucceeded } from "@connectors/connectors/sync_status";
 import { cacheGet, cacheSet } from "@connectors/lib/cache";
 import { nango_client } from "@connectors/lib/nango_client";
+import logger from "@connectors/logger/logger";
 import { DataSourceConfig } from "@connectors/types/data_source_config";
 
 const { FRONT_API, NANGO_SLACK_CONNECTOR_ID } = process.env;
@@ -18,12 +19,16 @@ const { FRONT_API, NANGO_SLACK_CONNECTOR_ID } = process.env;
 // This controls the maximum number of concurrent calls to syncThread and syncNonThreaded.
 const MAX_CONCURRENCY_LEVEL = 20;
 
+// Timeout in ms for all network requests;
+const NETWORK_REQUEST_TIMEOUT_MS = 30000;
+
 /**
  * Slack API rate limit TLDR:
  * Slack has different rate limits for different endpoints.
+ * Broadly, you'll encounter limits like these, applied on a "per API method per app per workspace" basis.
  * Tier 1: ~1 request per minute
  * Tier 2: ~20 request per minute (conversations.history)
- * Tier 3: ~50 request per minute
+ * Tier 3: ~50 request per minute (conversations.replies)
  * 
 
  */
@@ -31,7 +36,7 @@ const MAX_CONCURRENCY_LEVEL = 20;
 export async function getChannels(
   slackAccessToken: string
 ): Promise<Channel[]> {
-  const client = new WebClient(slackAccessToken);
+  const client = getSlackClient(slackAccessToken);
   const allChannels = [];
   let nextCursor: string | undefined = undefined;
   do {
@@ -67,7 +72,7 @@ export async function getMessagesForChannel(
   limit = 100,
   nextCursor?: string
 ): Promise<ConversationsHistoryResponse> {
-  const client = new WebClient(slackAccessToken);
+  const client = getSlackClient(slackAccessToken);
 
   const c: ConversationsHistoryResponse = await client.conversations.history({
     channel: channelId,
@@ -79,7 +84,8 @@ export async function getMessagesForChannel(
       `Failed getting messages for channel ${channelId}: ${c.error}`
     );
   }
-  console.log("We got messages for channel ${channelId}", c.messages?.length);
+
+  logger.info(`Got ${c.messages?.length} messages for channel ${channelId}`);
   return c;
 }
 
@@ -119,7 +125,7 @@ export async function syncNonThreaded(
   endTsMs: number,
   connectorId: string
 ) {
-  const client = new WebClient(slackAccessToken);
+  const client = getSlackClient(slackAccessToken);
   const nextCursor: string | undefined = undefined;
   const messages: Message[] = [];
 
@@ -194,6 +200,7 @@ export async function syncThreads(
   dataSourceConfig: DataSourceConfig,
   slackAccessToken: string,
   channelId: string,
+  channelName: string,
   threadsTs: string[],
   connectorId: string
 ) {
@@ -205,6 +212,7 @@ export async function syncThreads(
           dataSourceConfig,
           slackAccessToken,
           channelId,
+          channelName,
           t,
           connectorId
         )
@@ -217,18 +225,13 @@ export async function syncThread(
   dataSourceConfig: DataSourceConfig,
   slackAccessToken: string,
   channelId: string,
+  channelName: string,
   threadTs: string,
   connectorId: string
 ) {
-  const client = new WebClient(slackAccessToken);
+  const client = getSlackClient(slackAccessToken);
 
   let allMessages: Message[] = [];
-  const { channel } = await client.conversations.info({
-    channel: channelId,
-  });
-  if (!channel) {
-    throw new Error("Channel not found for id " + channelId);
-  }
 
   let next_cursor = undefined;
 
@@ -238,6 +241,7 @@ export async function syncThread(
         channel: channelId,
         ts: threadTs,
         cursor: next_cursor,
+        limit: 100,
       });
     if (replies.error) {
       throw new Error(replies.error);
@@ -255,7 +259,7 @@ export async function syncThread(
     connectorId,
     client
   );
-  const documentId = `${channel.name}-threaded-${threadTs}`;
+  const documentId = `${channelName}-threaded-${threadTs}`;
 
   const firstMessage = allMessages[0];
   let sourceUrl: string | undefined = undefined;
@@ -339,9 +343,39 @@ async function upsertToDatasource(
   documentId: string,
   documentContent: string,
   sourceUrl?: string,
+  createAt?: number,
+  retries = 1,
+  waitBetweenRetries = 1000
+) {
+  if (retries < 1) {
+    throw new Error("retries must be greater than 0");
+  }
+  const errors = [];
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await _upsertToDatasource(
+        dataSourceConfig,
+        documentId,
+        documentContent,
+        sourceUrl,
+        createAt
+      );
+      return res;
+    } catch (e) {
+      errors.push(e);
+      await new Promise((resolve) => setTimeout(resolve, waitBetweenRetries));
+    }
+  }
+  throw new Error(errors.join("\n"));
+}
+
+async function _upsertToDatasource(
+  dataSourceConfig: DataSourceConfig,
+  documentId: string,
+  documentContent: string,
+  sourceUrl?: string,
   createAt?: number
 ) {
-  console.log(`upsert ${documentId}`);
   const dust_url = `${FRONT_API}/api/v1/w/${dataSourceConfig.workspaceId}/data_sources/${dataSourceConfig.dataSourceName}/documents/${documentId}`;
   const dust_request_payload = {
     text: documentContent,
@@ -352,6 +386,7 @@ async function upsertToDatasource(
     headers: {
       Authorization: `Bearer ${dataSourceConfig.workspaceAPIKey}`,
     },
+    timeout: NETWORK_REQUEST_TIMEOUT_MS,
   };
   const dust_request_result = await axios.post(
     dust_url,
@@ -372,7 +407,7 @@ export async function fetchUsers(
   connectorId: string
 ) {
   let cursor: string | undefined;
-  const client = new WebClient(slackAccessToken);
+  const client = getSlackClient(slackAccessToken);
   do {
     const res = await client.users.list({});
     if (res.error) {
@@ -400,6 +435,7 @@ export async function getAccessToken(
 }
 
 export async function saveSuccessSyncActivity(connectorId: string) {
+  logger.info(`Saving success sync activity for connector ${connectorId}`);
   await syncSucceeded(parseInt(connectorId));
 }
 
@@ -434,4 +470,10 @@ export function formatDateForUpsert(date: Date) {
   const minutes = date.getMinutes().toString().padStart(2, "0");
 
   return `${year}${month}${day} ${hours}:${minutes}`;
+}
+
+function getSlackClient(slackAccessToken: string): WebClient {
+  return new WebClient(slackAccessToken, {
+    timeout: NETWORK_REQUEST_TIMEOUT_MS,
+  });
 }

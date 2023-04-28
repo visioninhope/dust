@@ -73,7 +73,7 @@ export async function workspaceSyncOneChannel(
     const messages = await getMessagesForChannel(
       slackAccessToken,
       channelId,
-      500,
+      100,
       messagesCursor
     );
     if (!messages.messages) {
@@ -106,15 +106,15 @@ export async function workspaceSyncOneChannel(
       dataSourceConfig,
       slackAccessToken,
       channelId,
+      channelName,
       threadsToSync,
       connectorId
     );
     threadsToSync.length = 0;
 
     messagesCursor = messages.response_metadata?.next_cursor;
-    console.log("iterating on messages call", messagesCursor);
   } while (messagesCursor);
-  console.log("going to work on unthreaded now", unthreadedTimeframesToSync);
+
   await syncMultipleNoNThreaded(
     slackAccessToken,
     dataSourceConfig,
