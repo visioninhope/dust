@@ -1,9 +1,9 @@
 import { executeChild, proxyActivities } from "@temporalio/workflow";
 
-import { DataSourceConfig } from "../../../types/data_source_config";
+import type * as activities from "@connectors/connectors/slack/temporal/activities";
+import { DataSourceConfig } from "@connectors/types/data_source_config";
+
 import { getWeekEnd, getWeekStart } from "../lib/utils";
-import type * as activities from "./activities";
-import { saveSuccessSyncActivity } from "./activities";
 
 const {
   getChannels,
@@ -12,8 +12,9 @@ const {
   syncMultipleNoNThreaded,
   getAccessToken,
   fetchUsers,
+  saveSuccessSyncActivity,
 } = proxyActivities<typeof activities>({
-  startToCloseTimeout: "1 minute",
+  startToCloseTimeout: "10 minute",
 });
 
 /**
@@ -47,7 +48,8 @@ export async function workspaceFullSync(
       ],
     });
   }
-  saveSuccessSyncActivity(dataSourceConfig);
+  await saveSuccessSyncActivity(connectorId);
+  console.log(`Workspace sync done for connector ${connectorId}`);
 }
 
 export async function workspaceSyncOneChannel(
@@ -58,6 +60,7 @@ export async function workspaceSyncOneChannel(
   channelName: string,
   messagesCursor?: string
 ) {
+  console.log(`Syncing channel ${channelName} (${channelId})`);
   const threadsToSync: string[] = [];
   const unthreadedTimeframesToSync = new Map<
     string,
@@ -70,7 +73,7 @@ export async function workspaceSyncOneChannel(
     const messages = await getMessagesForChannel(
       slackAccessToken,
       channelId,
-      100,
+      500,
       messagesCursor
     );
     if (!messages.messages) {
@@ -79,6 +82,10 @@ export async function workspaceSyncOneChannel(
       break;
     }
     for (const message of messages.messages) {
+      if (!message.user) {
+        // We do not support messages not posted by users for now
+        continue;
+      }
       if (message.thread_ts) {
         if (threadsToSync.indexOf(message.thread_ts) === -1) {
           // We can end up getting two messages from the same thread if a message from a thread has also been "posted to channel".
@@ -105,7 +112,9 @@ export async function workspaceSyncOneChannel(
     threadsToSync.length = 0;
 
     messagesCursor = messages.response_metadata?.next_cursor;
+    console.log("iterating on messages call", messagesCursor);
   } while (messagesCursor);
+  console.log("going to work on unthreaded now", unthreadedTimeframesToSync);
   await syncMultipleNoNThreaded(
     slackAccessToken,
     dataSourceConfig,
@@ -114,4 +123,5 @@ export async function workspaceSyncOneChannel(
     Array.from(unthreadedTimeframesToSync.values()),
     connectorId
   );
+  console.log(`Syncing channel ${channelName} (${channelId}) done`);
 }

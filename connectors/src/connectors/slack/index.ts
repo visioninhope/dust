@@ -68,7 +68,7 @@ export async function createSlackConnector(
         { transaction: t }
       );
 
-      launchSlackSyncWorkflow(dataSourceConfig, nangoConnectionId);
+      launchSlackSyncWorkflow(connector.id.toString());
 
       return new Ok(connector);
     }

@@ -9,16 +9,24 @@ import { ConversationsRepliesResponse } from "@slack/web-api/dist/response/Conve
 import axios, { AxiosRequestConfig } from "axios";
 
 import { syncSucceeded } from "@connectors/connectors/sync_status";
-import { Connector } from "@connectors/lib/models";
+import { cacheGet, cacheSet } from "@connectors/lib/cache";
 import { nango_client } from "@connectors/lib/nango_client";
 import { DataSourceConfig } from "@connectors/types/data_source_config";
-
-import { cacheGet, cacheSet } from "../../../lib/cache";
 
 const { FRONT_API, NANGO_SLACK_CONNECTOR_ID } = process.env;
 
 // This controls the maximum number of concurrent calls to syncThread and syncNonThreaded.
-const MAX_CONCURRENCY_LEVEL = 10;
+const MAX_CONCURRENCY_LEVEL = 20;
+
+/**
+ * Slack API rate limit TLDR:
+ * Slack has different rate limits for different endpoints.
+ * Tier 1: ~1 request per minute
+ * Tier 2: ~20 request per minute (conversations.history)
+ * Tier 3: ~50 request per minute
+ * 
+
+ */
 
 export async function getChannels(
   slackAccessToken: string
@@ -71,7 +79,7 @@ export async function getMessagesForChannel(
       `Failed getting messages for channel ${channelId}: ${c.error}`
     );
   }
-
+  console.log("We got messages for channel ${channelId}", c.messages?.length);
   return c;
 }
 
@@ -125,6 +133,7 @@ export async function syncNonThreaded(
     latest: `${endTsSec}`,
     cursor: nextCursor,
   });
+
   if (c.error) {
     throw new Error(
       `Failed getting messages for channel ${channelId}: ${c.error}`
@@ -136,6 +145,9 @@ export async function syncNonThreaded(
     );
   }
   for (const message of c.messages) {
+    if (!message.user) {
+      continue;
+    }
     if (!message.thread_ts) {
       messages.push(message);
     }
@@ -152,7 +164,28 @@ export async function syncNonThreaded(
   const startDateStr = `${startDate.getFullYear()}-${startDate.getMonth()}-${startDate.getDate()}`;
   const endDateStr = `${endDate.getFullYear()}-${endDate.getMonth()}-${endDate.getDate()}`;
   const documentId = `${channelName}-nonthreaded-${startDateStr}-${endDateStr}`;
-  await upsertToDatasource(dataSourceConfig, documentId, text);
+  const firstMessage = messages[0];
+  let sourceUrl: string | undefined = undefined;
+  const createdAt = firstMessage?.ts
+    ? parseInt(firstMessage.ts, 10) * 1000
+    : undefined;
+  if (firstMessage && firstMessage.ts) {
+    const linkRes = await client.chat.getPermalink({
+      channel: channelId,
+      message_ts: firstMessage.ts,
+    });
+    if (linkRes.ok && linkRes.permalink) {
+      sourceUrl = linkRes.permalink;
+    }
+  }
+
+  await upsertToDatasource(
+    dataSourceConfig,
+    documentId,
+    text,
+    sourceUrl,
+    createdAt
+  );
 
   return c;
 }
@@ -166,7 +199,6 @@ export async function syncThreads(
 ) {
   while (threadsTs.length > 0) {
     const _threadsTs = threadsTs.splice(0, MAX_CONCURRENCY_LEVEL);
-
     await Promise.all(
       _threadsTs.map((t) =>
         syncThread(
@@ -213,7 +245,7 @@ export async function syncThread(
     if (!replies.messages) {
       break;
     }
-    allMessages = allMessages.concat(replies.messages);
+    allMessages = allMessages.concat(replies.messages.filter((m) => !!m.user));
     next_cursor = replies.response_metadata?.next_cursor;
   } while (next_cursor);
 
@@ -225,7 +257,28 @@ export async function syncThread(
   );
   const documentId = `${channel.name}-threaded-${threadTs}`;
 
-  await upsertToDatasource(dataSourceConfig, documentId, text);
+  const firstMessage = allMessages[0];
+  let sourceUrl: string | undefined = undefined;
+  const createdAt = firstMessage?.ts
+    ? parseInt(firstMessage.ts, 10) * 1000
+    : undefined;
+  if (firstMessage && firstMessage.ts) {
+    const linkRes = await client.chat.getPermalink({
+      channel: channelId,
+      message_ts: firstMessage.ts,
+    });
+    if (linkRes.ok && linkRes.permalink) {
+      sourceUrl = linkRes.permalink;
+    }
+  }
+
+  await upsertToDatasource(
+    dataSourceConfig,
+    documentId,
+    text,
+    sourceUrl,
+    createdAt
+  );
 }
 
 async function processMessageForMentions(
@@ -284,11 +337,16 @@ async function formatMessagesForUpsert(
 async function upsertToDatasource(
   dataSourceConfig: DataSourceConfig,
   documentId: string,
-  documentContent: string
+  documentContent: string,
+  sourceUrl?: string,
+  createAt?: number
 ) {
+  console.log(`upsert ${documentId}`);
   const dust_url = `${FRONT_API}/api/v1/w/${dataSourceConfig.workspaceId}/data_sources/${dataSourceConfig.dataSourceName}/documents/${documentId}`;
   const dust_request_payload = {
     text: documentContent,
+    sourceUrl: sourceUrl,
+    timestamp: createAt,
   };
   const dust_request_config: AxiosRequestConfig = {
     headers: {
@@ -300,7 +358,6 @@ async function upsertToDatasource(
     dust_request_payload,
     dust_request_config
   );
-
   if (dust_request_result.status >= 200 && dust_request_result.status < 300) {
     return;
   } else {
@@ -342,22 +399,8 @@ export async function getAccessToken(
   return nango_client().getToken(NANGO_SLACK_CONNECTOR_ID, nangoConnectionId);
 }
 
-export async function saveSuccessSyncActivity(
-  dataSourceConfig: DataSourceConfig
-) {
-  const connector = await Connector.findOne({
-    where: {
-      type: "slack",
-      workspaceId: dataSourceConfig.workspaceId,
-      dataSourceName: dataSourceConfig.dataSourceName,
-    },
-  });
-  if (!connector) {
-    throw new Error(
-      `Could not find the connectors to mark it as success :/ ${dataSourceConfig.workspaceId} ${dataSourceConfig.dataSourceName}`
-    );
-  }
-  await syncSucceeded(connector.id);
+export async function saveSuccessSyncActivity(connectorId: string) {
+  await syncSucceeded(parseInt(connectorId));
 }
 
 async function getUserName(
@@ -369,14 +412,10 @@ async function getUserName(
   if (fromCache) {
     return fromCache;
   }
+
   const info = await slackClient.users.info({ user: slackUserId });
-  if (info.error) {
-    throw new Error(info.error);
-  }
-  if (!info.user) {
-    throw new Error("User not found");
-  }
-  if (info.user.real_name) {
+
+  if (info.user?.real_name) {
     cacheSet(getUserCacheKey(slackUserId, connectorId), info.user.real_name);
     return info.user.real_name;
   }

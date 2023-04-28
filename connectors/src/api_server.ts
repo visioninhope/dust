@@ -8,6 +8,8 @@ import { getConnectorStatusAPIHandler } from "@connectors/api/syncStatus";
 import logger from "@connectors/logger/logger";
 import { authMiddleware } from "@connectors/middleware/auth";
 
+import { syncApiHandler } from "./api/sync";
+
 export function startServer(port: number) {
   const app = express();
 
@@ -21,6 +23,7 @@ export function startServer(port: number) {
     "/connectors/sync_status/:connector_id",
     getConnectorStatusAPIHandler
   );
+  app.post("/connectors/sync/:connector_id", syncApiHandler);
 
   app.listen(port, () => {
     logger.info(`Connectors API listening on port ${port}`);
