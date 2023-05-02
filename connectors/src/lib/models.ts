@@ -182,6 +182,10 @@ NotionPage.init(
       type: DataTypes.STRING,
       allowNull: false,
     },
+    connectorId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
   },
   {
     sequelize: sequelize_conn,

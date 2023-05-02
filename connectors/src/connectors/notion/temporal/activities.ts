@@ -3,7 +3,7 @@ import {
   getParsedPage,
 } from "@connectors/connectors/notion/lib/notion_api";
 import { getTagsForPage } from "@connectors/connectors/notion/lib/tags";
-import { Connector, sequelize_conn } from "@connectors/lib/models";
+import { Connector, NotionPage, sequelize_conn } from "@connectors/lib/models";
 import { nango_client } from "@connectors/lib/nango_client";
 import { upsertToDatasource } from "@connectors/lib/upsert";
 import { DataSourceConfig } from "@connectors/types/data_source_config";
@@ -20,6 +20,42 @@ export async function notionUpsertPageActivity(
   pageId: string,
   dataSourceConfig: DataSourceConfig
 ) {
+  const transaction = await sequelize_conn.transaction();
+
+  try {
+    const connector = await Connector.findOne({
+      where: {
+        type: "notion",
+        workspaceId: dataSourceConfig.workspaceId,
+        dataSourceName: dataSourceConfig.dataSourceName,
+      },
+      transaction,
+    });
+
+    if (!connector) {
+      throw new Error("Could not find connector");
+    }
+
+    const existingNotionPage = await NotionPage.findOne({
+      where: {
+        notionPageId: pageId,
+      },
+      transaction,
+    });
+
+    if (!existingNotionPage) {
+      await NotionPage.create({
+        notionPageId: pageId,
+        connectorId: connector.id,
+      });
+    }
+
+    await transaction.commit();
+  } catch (e) {
+    await transaction.rollback();
+    throw e;
+  }
+
   const parsedPage = await getParsedPage(accessToken, pageId);
   await upsertToDatasource(
     dataSourceConfig,
