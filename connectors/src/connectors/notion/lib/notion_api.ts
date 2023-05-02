@@ -10,6 +10,7 @@ import {
 import {
   BlockObjectResponse,
   PageObjectResponse,
+  PartialBlockObjectResponse,
   RichTextItemResponse,
   SearchResponse,
 } from "@notionhq/client/build/src/api-endpoints";
@@ -169,9 +170,19 @@ export async function getParsedPage(
     text: parsePropertyText(value),
   }));
 
-  const blocks = await collectPaginatedAPI(notionClient.blocks.children.list, {
-    block_id: page.id,
-  });
+  let blocks: (BlockObjectResponse | PartialBlockObjectResponse)[] = [];
+  try {
+    blocks = await collectPaginatedAPI(notionClient.blocks.children.list, {
+      block_id: page.id,
+    });
+  } catch (e) {
+    // Skip if we can't get the blocks
+    if (
+      !(APIResponseError.isAPIResponseError(e) && e.code === "object_not_found")
+    ) {
+      throw e;
+    }
+  }
 
   let parsedBlocks: ParsedBlock[] = [];
   for (const block of blocks) {
@@ -427,12 +438,23 @@ async function parsePageBlock(
       return parsedBlocks;
     }
 
-    const children = await collectPaginatedAPI(
-      notionClient.blocks.children.list,
-      {
+    let children: (BlockObjectResponse | PartialBlockObjectResponse)[] | null =
+      null;
+
+    try {
+      children = await collectPaginatedAPI(notionClient.blocks.children.list, {
         block_id: block.id,
+      });
+    } catch (e) {
+      if (
+        APIResponseError.isAPIResponseError(e) &&
+        e.code === "object_not_found"
+      ) {
+        return parsedBlocks;
       }
-    );
+      throw e;
+    }
+
     const parsedChildren = (
       await Promise.all(
         children.map(async (child) => {
