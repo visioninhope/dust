@@ -9,8 +9,12 @@ import {
 import type * as activities from "@connectors/connectors/notion/temporal/activities";
 import { DataSourceConfig } from "@connectors/types/data_source_config";
 
-const { notionGetPagesToSyncActivity } = proxyActivities<typeof activities>({
-  startToCloseTimeout: "1 minute",
+const {
+  notionGetPagesToSyncActivity,
+  findNewAndDeletedPagesActivity,
+  notionDeletePageActivity,
+} = proxyActivities<typeof activities>({
+  startToCloseTimeout: "3 minute",
 });
 const { notionUpsertPageActivity } = proxyActivities<typeof activities>({
   startToCloseTimeout: "5 minute",
@@ -58,6 +62,20 @@ export async function notionSyncWorkflow(
 
   const notionAccessToken = await getNotionAccessTokenActivity(
     nangoConnectionId
+  );
+
+  const { newPages, deletedPages } = await findNewAndDeletedPagesActivity(
+    dataSourceConfig,
+    nangoConnectionId
+  );
+
+  await Promise.all(
+    deletedPages.map((p) => notionDeletePageActivity(p, dataSourceConfig))
+  );
+  await Promise.all(
+    newPages.map((p) =>
+      notionUpsertPageActivity(notionAccessToken, p, dataSourceConfig)
+    )
   );
 
   do {

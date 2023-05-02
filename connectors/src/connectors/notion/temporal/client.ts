@@ -4,6 +4,7 @@ import {
   WorkflowNotFoundError,
 } from "@temporalio/client";
 
+import { queueName } from "@connectors/connectors/notion/temporal/config";
 import {
   getLastSyncPeriodTsQuery,
   notionSyncWorkflow,
@@ -73,7 +74,7 @@ export async function launchNotionSyncWorkflow(
       nangoConnectionId,
       startFromTs || lastSyncedPeriodTs || undefined,
     ],
-    taskQueue: "notion-queue",
+    taskQueue: queueName,
     workflowId: getWorkflowId(dataSourceConfig),
   });
 
