@@ -9,6 +9,7 @@ import {
   getLastSyncPeriodTsQuery,
   notionSyncWorkflow,
 } from "@connectors/connectors/notion/temporal/workflows";
+import { errorFromAny } from "@connectors/lib/error";
 import { getTemporalClient } from "@connectors/lib/temporal";
 import logger from "@connectors/logger/logger";
 import {
@@ -59,13 +60,7 @@ export async function launchNotionSyncWorkflow(
       lastSyncedPeriodTs = existingWorkflowStatus.lastSyncPeriodTs;
     }
 
-    logger.info(
-      { workspaceId: dataSourceConfig.workspaceId },
-      "Cancelling existing Notion sync workflow"
-    );
-
-    const handle = client.workflow.getHandle(getWorkflowId(dataSourceConfig));
-    await handle.cancel();
+    await stopWorkflow(dataSourceConfig);
   }
 
   await client.workflow.start(notionSyncWorkflow, {
@@ -87,8 +82,6 @@ export async function launchNotionSyncWorkflow(
 export async function stopNotionSyncWorkflow(
   dataSourceConfig: DataSourceInfo
 ): Promise<void> {
-  const client = await getTemporalClient();
-
   const existingWorkflowStatus = await getNotionConnectionStatus(
     dataSourceConfig
   );
@@ -117,17 +110,11 @@ export async function stopNotionSyncWorkflow(
     return;
   }
 
-  logger.info(
-    { workspaceId: dataSourceConfig.workspaceId },
-    "Cancelling existing Notion sync workflow"
-  );
-
-  const handle = client.workflow.getHandle(getWorkflowId(dataSourceConfig));
-  await handle.cancel();
+  await stopWorkflow(dataSourceConfig);
 
   logger.info(
     { workspaceId: dataSourceConfig.workspaceId },
-    "Cancelled Notion sync workflow"
+    "Terminated Notion sync workflow"
   );
 }
 
@@ -141,11 +128,23 @@ export async function getNotionConnectionStatus(
 
   const handle: WorkflowHandle<typeof notionSyncWorkflow> =
     client.workflow.getHandle(getWorkflowId(dataSourceInfo));
+
   try {
-    const [execStatusRes, lastSyncPeriodTsRes] = await Promise.all([
-      handle.describe(),
-      handle.query(getLastSyncPeriodTsQuery),
-    ]);
+    const execStatusRes = await handle.describe();
+    let lastSyncPeriodTsRes: number | null = null;
+    try {
+      lastSyncPeriodTsRes = await handle.query(getLastSyncPeriodTsQuery);
+    } catch (e) {
+      logger.warn(
+        {
+          workspaceId: dataSourceInfo.workspaceId,
+          dataSourceName: dataSourceInfo.dataSourceName,
+          error: errorFromAny(e),
+        },
+        "Failed to get last sync period ts for notion sync workflow"
+      );
+    }
+
     return {
       status: execStatusRes,
       lastSyncPeriodTs: lastSyncPeriodTsRes,
@@ -153,7 +152,12 @@ export async function getNotionConnectionStatus(
   } catch (e) {
     if (e instanceof WorkflowNotFoundError) {
       logger.warn(
-        `Notion sync workflow not found for workspace ${dataSourceInfo.workspaceId}`
+        {
+          workspaceId: dataSourceInfo.workspaceId,
+          dataSourceName: dataSourceInfo.dataSourceName,
+          error: errorFromAny(e),
+        },
+        "Notion sync workflow not found"
       );
       return {
         status: null,
@@ -163,4 +167,63 @@ export async function getNotionConnectionStatus(
 
     throw e;
   }
+}
+
+async function stopWorkflow(dataSourceInfo: DataSourceInfo) {
+  const client = await getTemporalClient();
+  const handle = client.workflow.getHandle(getWorkflowId(dataSourceInfo));
+  logger.info(
+    {
+      workspaceId: dataSourceInfo.workspaceId,
+      dataSourceName: dataSourceInfo.dataSourceName,
+    },
+    `Stopping workflow`
+  );
+
+  logger.info(
+    {
+      workspaceId: dataSourceInfo.workspaceId,
+      dataSourceName: dataSourceInfo.dataSourceName,
+    },
+    "Attempting to cancel workflow"
+  );
+
+  try {
+    await handle.cancel();
+    logger.info(
+      {
+        workspaceId: dataSourceInfo.workspaceId,
+        dataSourceName: dataSourceInfo.dataSourceName,
+      },
+      "Workflow successfully cancelled"
+    );
+    return;
+  } catch (e) {
+    logger.warn(
+      {
+        workspaceId: dataSourceInfo.workspaceId,
+        dataSourceName: dataSourceInfo.dataSourceName,
+        error: errorFromAny(e),
+      },
+      "Failed to cancel workflow"
+    );
+  }
+
+  logger.info(
+    {
+      workspaceId: dataSourceInfo.workspaceId,
+      dataSourceName: dataSourceInfo.dataSourceName,
+    },
+    "Attempting to terminate workflow"
+  );
+
+  await handle.terminate();
+
+  logger.info(
+    {
+      workspaceId: dataSourceInfo.workspaceId,
+      dataSourceName: dataSourceInfo.dataSourceName,
+    },
+    "Workflow successfully terminated"
+  );
 }
