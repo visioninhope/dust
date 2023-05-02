@@ -3,9 +3,12 @@ import {
   getParsedPage,
 } from "@connectors/connectors/notion/lib/notion_api";
 import { getTagsForPage } from "@connectors/connectors/notion/lib/tags";
+import {
+  deleteFromDatasource,
+  upsertToDatasource,
+} from "@connectors/lib/datasource_api";
 import { Connector, NotionPage, sequelize_conn } from "@connectors/lib/models";
 import { nango_client } from "@connectors/lib/nango_client";
-import { upsertToDatasource } from "@connectors/lib/upsert";
 import { DataSourceConfig } from "@connectors/types/data_source_config";
 
 export async function notionGetPagesToSyncActivity(
@@ -144,4 +147,63 @@ export async function getNotionAccessTokenActivity(
   )) as string;
 
   return notionAccessToken;
+}
+
+export async function findNewAndDeletedPagesActivity(
+  dataSourceConfig: DataSourceConfig,
+  nangoConnectionId: string
+): Promise<{ newPages: string[]; deletedPages: string[] }> {
+  const { NANGO_NOTION_CONNECTOR_ID } = process.env;
+
+  if (!NANGO_NOTION_CONNECTOR_ID) {
+    throw new Error("NANGO_NOTION_CONNECTOR_ID not set");
+  }
+
+  const notionAccessToken = (await nango_client().getToken(
+    NANGO_NOTION_CONNECTOR_ID,
+    nangoConnectionId
+  )) as string;
+  const notionPageIdsInNotion = new Set(
+    await getPagesEditedSince(notionAccessToken, null)
+  );
+
+  const connector = await Connector.findOne({
+    where: {
+      type: "notion",
+      workspaceId: dataSourceConfig.workspaceId,
+      dataSourceName: dataSourceConfig.dataSourceName,
+    },
+  });
+  if (!connector) {
+    throw new Error("Could not find connector");
+  }
+  const notionPageIdsInDb = new Set(
+    (
+      await NotionPage.findAll({
+        where: {
+          connectorId: connector.id,
+        },
+        attributes: ["notionPageId"],
+      })
+    ).map((p) => p.notionPageId)
+  );
+
+  const pagesToDelete = Array.from(notionPageIdsInDb).filter(
+    (x) => !notionPageIdsInNotion.has(x)
+  );
+  const missingPages = Array.from(notionPageIdsInNotion).filter(
+    (x) => !notionPageIdsInDb.has(x)
+  );
+
+  return {
+    newPages: missingPages,
+    deletedPages: pagesToDelete,
+  };
+}
+
+export async function notionDeletePageActivity(
+  pageId: string,
+  dataSourceConfig: DataSourceConfig
+) {
+  await deleteFromDatasource(dataSourceConfig, `notion-${pageId}`);
 }

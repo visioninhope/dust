@@ -9,6 +9,47 @@ if (!FRONT_API) {
   throw new Error("FRONT_API not set");
 }
 
+export async function deleteFromDatasource(
+  dataSourceConfig: DataSourceConfig,
+  documentId: string
+) {
+  const urlSafeName = encodeURIComponent(dataSourceConfig.dataSourceName);
+
+  const url = `${FRONT_API}/api/v1/w/${dataSourceConfig.workspaceId}/data_sources/${urlSafeName}/documents/${documentId}`;
+  let res: AxiosResponse;
+  try {
+    res = await axios.delete(url, {
+      headers: {
+        Authorization: `Bearer ${dataSourceConfig.workspaceAPIKey}`,
+      },
+    });
+  } catch (e) {
+    logger.error(errorFromAny(e), "Error deleting from datasource");
+    throw e;
+  }
+  if (res.status >= 200 && res.status < 300) {
+    logger.info(
+      {
+        documentId,
+        workspaceId: dataSourceConfig.workspaceId,
+        dataSourceName: dataSourceConfig.dataSourceName,
+      },
+      "successfully deleted document from datasource"
+    );
+  } else {
+    logger.error(
+      {
+        documentId,
+        workspaceId: dataSourceConfig.workspaceId,
+        dataSourceName: dataSourceConfig.dataSourceName,
+      },
+      "error deleting document from datasource"
+    );
+
+    throw new Error(`Error deleting from datasource: ${res}`);
+  }
+}
+
 export async function upsertToDatasource(
   dataSourceConfig: DataSourceConfig,
   documentId: string,
