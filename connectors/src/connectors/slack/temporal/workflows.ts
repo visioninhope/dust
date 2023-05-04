@@ -190,32 +190,27 @@ export async function memberJoinedChannel(
   const channelsToJoin: string[] = [];
   setHandler(
     botJoinedChanelSignal,
-    ({ channelId }: botJoinedChanelSignalInput) => {
+    async ({ channelId }: botJoinedChanelSignalInput) => {
       if (channelsToJoin.indexOf(channelId) === -1) {
         channelsToJoin.push(channelId);
       }
+      const at = await getAccessToken(nangoConnectionId);
+      console.log("done sleeping in signal handler", at);
     }
   );
 
-  let channelId: string | undefined;
-  while ((channelId = channelsToJoin.shift())) {
-    const slackAccessToken = await getAccessToken(nangoConnectionId);
-    const channel = await getChannel(slackAccessToken, channelId);
-    if (!channel.name) {
-      throw new Error(`Could not find channel name for channel ${channelId}`);
-    }
-    const channelName = channel.name;
-    await executeChild(syncOneChannel.name, {
-      workflowId: syncOneChanneWorkflowlId(connectorId, channelId),
-      args: [
-        connectorId,
-        nangoConnectionId,
-        dataSourceConfig,
-        channelId,
-        channelName,
-      ],
-    });
-  }
+  // let channelId: string | undefined;
+  // while ((channelId = channelsToJoin.shift())) {
+  //   console.log("sleep 1sec");
+  //   await new Promise((resolve) => setTimeout(resolve, 1000));
+  //   console.log("processed channel", channelId);
+  //   console.log("sleep 5sec");
+  //   await new Promise((resolve) => setTimeout(resolve, 5000));
+  //   console.log("done sleeping  5sec");
+  // }
+  // console.log("sleeping outside the loop. Fire now!");
+  // await new Promise((resolve) => setTimeout(resolve, 10000));
+  // console.log("Done sleeping", channelsToJoin);
   // /!\ Any signal received outside of the while loop will be lost, so don't make any async
   // call here, which will allow the signal handler to be executed by the nodejs event loop. /!\
 }
