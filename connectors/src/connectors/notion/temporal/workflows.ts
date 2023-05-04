@@ -33,8 +33,11 @@ const MAX_ITERATIONS_PER_WORKFLOW = 50;
 // Notion's "last edited" timestamp is precise to the minute
 const SYNC_PERIOD_DURATION_MS = 60_000;
 
-// How long to wait before checking for new pages again
-const INTERVAL_BETWEEN_SYNCS_MS = 10_000;
+// How long we initially wait before checking for new pages again
+const MINIMUM_INTERVAL_BETWEEN_SYNCS_MS = 10_000;
+// How long we wait at most before checking for new pages (wait time increases exponentially
+// with each iteration that yields no new pages)
+const MAXIMUM_INTERVAL_BETWEEN_SYNCS_MS = 300_000;
 
 const MAX_CONCURRENT_CHILD_WORKFLOWS = 1;
 const MAX_PENDING_UPSERT_ACTIVITIES = 3;
@@ -51,7 +54,8 @@ function preProcessTimestampForNotion(ts: number) {
 export async function notionSyncWorkflow(
   dataSourceConfig: DataSourceConfig,
   nangoConnectionId: string,
-  startFromTs?: number
+  startFromTs?: number,
+  initialWaitTimeMs?: number
 ) {
   let iterations = 0;
 
@@ -68,6 +72,8 @@ export async function notionSyncWorkflow(
   );
 
   const isInitialSync = !lastSyncedPeriodTs;
+
+  let waitTimeMs = initialWaitTimeMs || MINIMUM_INTERVAL_BETWEEN_SYNCS_MS;
 
   do {
     await saveStartSyncActivity(dataSourceConfig);
@@ -96,6 +102,18 @@ export async function notionSyncWorkflow(
       );
       cursor = nextCursor;
       pageIndex += 1;
+
+      if (pageIds.length) {
+        waitTimeMs = MINIMUM_INTERVAL_BETWEEN_SYNCS_MS;
+        continue;
+      } else {
+        // if we didn't find any pages to sync, we exponentially
+        // increase the wait time
+        waitTimeMs = Math.min(
+          MAXIMUM_INTERVAL_BETWEEN_SYNCS_MS,
+          waitTimeMs * 2
+        );
+      }
 
       const pagesToSync = pageIds.filter(
         (pageId) => !pagesSyncedWithinPeriod.has(pageId)
@@ -128,7 +146,7 @@ export async function notionSyncWorkflow(
     lastSyncedPeriodTs = nextSyncedPeriodTs;
     iterations += 1;
 
-    await sleep(INTERVAL_BETWEEN_SYNCS_MS);
+    await sleep(waitTimeMs);
   } while (
     !isInitialSync &&
     (iterations < MAX_ITERATIONS_PER_WORKFLOW || pagesSyncedWithinPeriod.size)
@@ -137,7 +155,8 @@ export async function notionSyncWorkflow(
   await continueAsNew<typeof notionSyncWorkflow>(
     dataSourceConfig,
     nangoConnectionId,
-    lastSyncedPeriodTs
+    lastSyncedPeriodTs,
+    waitTimeMs
   );
 }
 
