@@ -253,15 +253,17 @@ export function MessageView({
   user,
   message,
   loading,
+  withRetrievals,
 }: {
   user: UserType | null;
   message: Message;
   loading: boolean;
+  withRetrievals?: boolean;
 }) {
   return (
     <div className="">
       <div className="flex flex-row">
-        {message.role === "assistant" && <RetrievalsView message={message} />}
+        {withRetrievals ? <RetrievalsView message={message} /> : null}
       </div>
       <div className="my-2 flex flex-row items-start">
         <div
@@ -426,7 +428,12 @@ export default function AppChat({
                   {messages.map((m, i) => {
                     return (
                       <div key={i}>
-                        <MessageView user={user} message={m} loading={false} />
+                        <MessageView
+                          user={user}
+                          message={m}
+                          loading={false}
+                          withRetrievals={false}
+                        />
                       </div>
                     );
                   })}
@@ -436,6 +443,10 @@ export default function AppChat({
                         user={user}
                         message={response}
                         loading={true}
+                        withRetrievals={
+                          response.role === "assistant" &&
+                          dataSources.filter((ds) => ds.selected).length > 0
+                        }
                       />
                     </div>
                   ) : null}
