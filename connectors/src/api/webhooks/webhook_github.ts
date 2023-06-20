@@ -27,6 +27,9 @@ const HANDLED_WEBHOOKS = {
   pull_request: new Set(["opened", "edited"]),
 } as Record<string, Set<string>>;
 
+// TODO:
+// pull_request_review: submitted, edited (? not sure if we need this, looks like we get pinged for the comments anyway)
+// pull_request_review_comment: created, edited, deleted
 const logger = mainLogger.child({ provider: "github" });
 
 type GithubWebhookResBody = null | ConnectorsAPIErrorResponse;

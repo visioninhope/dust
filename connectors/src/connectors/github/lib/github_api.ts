@@ -27,7 +27,7 @@ export type GithubUser = {
   login: string;
 };
 
-type GithubIssue = {
+export type GithubIssue = {
   id: number;
   number: number;
   title: string;
@@ -209,6 +209,69 @@ export async function getIssueCommentsPage(
     updatedAt: new Date(c.updated_at),
     body: c.body,
   }));
+}
+
+export async function getIssuePullRequestsReviewsPage(
+  installationId: string,
+  repoName: string,
+  login: string,
+  issueNumber: number,
+  page: number
+) {
+  const octokit = await getOctokit(installationId);
+
+  const reviews = (
+    await octokit.rest.pulls.listReviewComments({
+      owner: login,
+      repo: repoName,
+      pull_number: issueNumber,
+      per_page: API_PAGE_SIZE,
+      page: page,
+    })
+  ).data;
+
+  return reviews;
+}
+
+export async function getPullRequest(
+  installationId: string,
+  repoName: string,
+  login: string,
+  issueNumber: number
+) {
+  const octokit = await getOctokit(installationId);
+
+  const pullRequest = (
+    await octokit.rest.pulls.get({
+      owner: login,
+      repo: repoName,
+      pull_number: issueNumber,
+    })
+  ).data;
+
+  return pullRequest;
+}
+
+export async function getPullRequestFilesPage(
+  installationId: string,
+  repoName: string,
+  login: string,
+  issueNumber: number,
+  page: number
+) {
+  const octokit = await getOctokit(installationId);
+
+  const files = (
+    await octokit.rest.pulls.listFiles({
+      owner: login,
+      repo: repoName,
+      pull_number: issueNumber,
+      per_page: API_PAGE_SIZE,
+      page: page,
+    })
+  ).data;
+
+  return files;
 }
 
 async function getOctokit(installationId: string): Promise<Octokit> {

@@ -102,6 +102,22 @@ export const DustProdActionRegistry: {
       },
     },
   },
+  "github-prs-summarize": {
+    app: {
+      workspaceId: PRODUCTION_DUST_APPS_WORKSPACE_ID,
+      appId: "d1084cbcaa",
+      appHash:
+        "b68e2476aa2192a849faa05c3e68e6fb1141a57db9c771bd836c7b603399272f",
+    },
+    config: {
+      MODEL: {
+        provider_id: "openai",
+        model_id: "gpt-3.5-turbo-16k-0613",
+        function_call: null,
+        use_cache: true,
+      },
+    },
+  },
 };
 
 export function cloneBaseConfig(config: { [model: string]: any }) {

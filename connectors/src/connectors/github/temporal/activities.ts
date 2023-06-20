@@ -1,8 +1,12 @@
 import PQueue from "p-queue";
+import { get_encoding } from "tiktoken";
 
 import {
   getIssue,
   getIssueCommentsPage,
+  getIssuePullRequestsReviewsPage,
+  getPullRequest,
+  getPullRequestFilesPage,
   getRepoIssuesPage,
   getReposPage,
   GithubUser,
@@ -15,6 +19,8 @@ import { Connector, GithubIssue } from "@connectors/lib/models";
 import { syncStarted, syncSucceeded } from "@connectors/lib/sync_status";
 import mainLogger from "@connectors/logger/logger";
 import { DataSourceConfig } from "@connectors/types/data_source_config";
+
+import { getAiGeneratedSummary } from "../lib/summarize_pr";
 
 const logger = mainLogger.child({
   provider: "github",
@@ -86,6 +92,19 @@ export async function githubUpsertIssueActivity(
 
   localLogger.info("Upserting GitHub issue.");
   const issue = await getIssue(installationId, repoName, login, issueNumber);
+  console.log("\n\n.................................");
+  console.log("IS THIS ISSUE A PR?", issue.isPullRequest);
+  if (issue.isPullRequest) {
+    const toSumm = getAiGeneratedSummary(
+      installationId,
+      repoName,
+      login,
+      issue
+    );
+    console.log("Tosumm\n", toSumm);
+  }
+
+  console.log(".................................\n\n");
   let renderedIssue = `# ${issue.title}||\n${issue.body}||\n`;
   let resultPage = 1;
   for (;;) {
