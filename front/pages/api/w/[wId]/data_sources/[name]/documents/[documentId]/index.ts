@@ -88,7 +88,7 @@ async function handler(
         });
       }
 
-      let tags = [];
+      let tags: string[] = [];
       if (req.body.tags) {
         if (!Array.isArray(req.body.tags)) {
           return apiError(req, res, {
@@ -97,6 +97,26 @@ async function handler(
               type: "invalid_request_error",
               message:
                 "Invalid request body, `tags` if provided must be an array of strings.",
+            },
+          });
+        }
+        if (tags.some((tag) => typeof tag !== "string")) {
+          return apiError(req, res, {
+            status_code: 400,
+            api_error: {
+              type: "invalid_request_error",
+              message:
+                "Invalid request body, `tags` if provided must be an array of strings.",
+            },
+          });
+        }
+        if (tags.some((tag) => tag.startsWith("__DUST"))) {
+          return apiError(req, res, {
+            status_code: 400,
+            api_error: {
+              type: "invalid_request_error",
+              message:
+                "Invalid request body, `tags` if provided must not contain tags starting with `__DUST`.",
             },
           });
         }
