@@ -31,7 +31,7 @@ const tabClasses = {
     },
   },
   selected: {
-    base: "s-border-action-500 s-text-action-500 s-cursor-default",
+    base: "s-border-action-500 s-text-action-500 s-cursor-pointer",
     hover: "",
     dark: {
       base: "dark:s-border-action-500-dark dark:s-text-action-500-dark",
