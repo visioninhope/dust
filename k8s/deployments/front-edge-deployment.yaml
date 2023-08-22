@@ -34,6 +34,10 @@ spec:
             # don't have the same memory limits as the regular front pods
             - name: NODE_OPTIONS
               value: "-r dd-trace/init --max-old-space-size=400"
+            - name: DD_TRACE_ENABLED
+              value: true
+            - name: DD_LOGS_INJECTION
+              value: true
 
             - name: CONNECTORS_API
               value: http://connectors-edge-service

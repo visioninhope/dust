@@ -5,6 +5,7 @@
 export DD_ENV=prod
 export DD_SERVICE=connectors
 export NODE_OPTIONS='-r dd-trace/init'
+export DD_TRACE_ENABLED=true
 export DD_LOGS_INJECTION=true
 export DD_RUNTIME_METRICS_ENABLED=true
 export NODE_ENV=production
