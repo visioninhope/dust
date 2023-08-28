@@ -404,3 +404,9 @@ export async function retrieveNotionConnectorPermissions(
 
   return new Ok(pageResources.concat(dbResources));
 }
+
+export async function searchResourceByTitleNotionConnector(
+  connectorId: ModelId,
+  query: string,
+  parentInternalId: string | null
+): Promise<Result<ConnectorResource[], Error>> {}
